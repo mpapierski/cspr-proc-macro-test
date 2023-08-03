@@ -1,0 +1,5 @@
+[workspace]
+members = ["macros", "test-contract", "api"]
+[profile.release]
+codegen-units = 1
+lto = true
