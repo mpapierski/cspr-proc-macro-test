@@ -16,9 +16,12 @@ pub struct Entry {
 }
 
 mod wasm {
-    use std::{mem::{self, MaybeUninit}, ptr::NonNull};
+    use std::{
+        mem::{self, MaybeUninit},
+        ptr::{NonNull, self}, ffi::c_void,
+    };
 
-    use super::{Error, Entry};
+    use super::{Entry, Error};
 
     #[derive(Debug)]
     #[repr(C)]
@@ -31,22 +34,38 @@ mod wasm {
     }
 
     extern "C" {
-        pub fn casper_read(key_space: u64, key_ptr: *const u8, key_size: usize, info: *mut ReadInfo) -> i32;
-        pub fn casper_write(key_space: u64, key_ptr: *const u8, key_size: usize, value_tag: u64, value_ptr: *const u8, value_size: usize) -> i32;
+        pub fn casper_read(
+            key_space: u64,
+            key_ptr: *const u8,
+            key_size: usize,
+            info: *mut ReadInfo,
+        ) -> i32;
+        pub fn casper_write(
+            key_space: u64,
+            key_ptr: *const u8,
+            key_size: usize,
+            value_tag: u64,
+            value_ptr: *const u8,
+            value_size: usize,
+        ) -> i32;
         pub fn casper_print(msg_ptr: *const u8, msg_size: usize) -> i32;
+        pub fn casper_revert(code: u32);
+        // pub fn foo(slice: *const Slice);
     }
 
     pub fn print(msg: &str) {
-        let _res =
-            unsafe { casper_print(msg.as_ptr(), msg.len()) };
+        let _res = unsafe { casper_print(msg.as_ptr(), msg.len()) };
+    }
+
+    pub fn revert(code: u32) -> ! {
+        unsafe { casper_revert(code) };
+        unreachable!()
     }
 
     pub fn read(key_space: u64, key: &[u8]) -> Result<Option<Entry>, Error> {
         let mut info = MaybeUninit::uninit();
 
-        let ret = unsafe {
-            casper_read(key_space, key.as_ptr(), key.len(), info.as_mut_ptr())
-        };
+        let ret = unsafe { casper_read(key_space, key.as_ptr(), key.len(), info.as_mut_ptr()) };
 
         if ret == 0 {
             let info = unsafe { info.assume_init() };
@@ -55,27 +74,29 @@ mod wasm {
                 data,
                 tag: info.tag,
             }))
-        }
-        else if ret == 1 {
+        } else if ret == 1 {
             Ok(None)
-        }
-        else {
+        } else {
             Err(Error::Foo)
         }
-
-
     }
 
     pub fn write(key_space: u64, key: &[u8], value_tag: u64, value: &[u8]) -> Result<(), Error> {
         let _ret = unsafe {
-            casper_write(key_space, key.as_ptr(), key.len(), value_tag, value.as_ptr(), value.len())
+            casper_write(
+                key_space,
+                key.as_ptr(),
+                key.len(),
+                value_tag,
+                value.as_ptr(),
+                value.len(),
+            )
         };
         Ok(())
     }
 
     #[no_mangle]
     pub extern "C" fn alloc(len: usize) -> *mut u8 {
-        // print(&format!("recevied call to alloc({len})"));
         // Create a new mutable buffer with capacity `len`
         let mut buf = Vec::with_capacity(len);
         // Take a mutable pointer to the buffer
@@ -87,6 +108,6 @@ mod wasm {
     }
 }
 
-pub use wasm::{read, write, print};
+pub use wasm::{print, read, revert, write};
 
 // #[cfg(not(target_arch = "wasm32"))]

@@ -1,6 +1,6 @@
 pub mod host;
 
-use std::{cell::RefCell, collections::BTreeMap, io, fmt};
+use std::{cell::RefCell, collections::BTreeMap, fmt, io};
 
 use borsh::BorshDeserialize;
 
@@ -35,7 +35,7 @@ pub enum Access {
 #[derive(Debug)]
 pub struct EntryPoint<'a, F: Fn()> {
     pub name: &'a str,
-    pub params:&'a  [(&'a str, CLType)],
+    pub params: &'a [(&'a str, CLType)],
     // pub access: Access,
     // fptr: extern "C" fn() -> (),
     pub func: F,
@@ -60,7 +60,7 @@ pub unsafe fn register_func(name: &str, f: extern "C" fn() -> ()) {
     DISPATCHER.with(|foo| foo.borrow_mut().insert(name.to_string(), f));
 }
 
-pub fn register_entrypoint<'a, F: fmt::Debug+Fn()>(entrypoint: EntryPoint<'a, F>) {
+pub fn register_entrypoint<'a, F: fmt::Debug + Fn()>(entrypoint: EntryPoint<'a, F>) {
     dbg!(entrypoint);
     // dbg!(&entrypoint);
     // unsafe {

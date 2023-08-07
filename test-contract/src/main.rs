@@ -6,7 +6,13 @@
 #[macro_use]
 extern crate alloc;
 
-use api::{EntryPoint, dispatch, host};
+use core::{
+    mem,
+    ptr::{self, NonNull},
+};
+
+use alloc::slice;
+use api::{dispatch, host, EntryPoint};
 use macros::casper;
 
 // pub(crate) mod foo {
@@ -48,15 +54,31 @@ use macros::casper;
 const KEY_SPACE_DEFAULT: u64 = 0;
 const TAG_BYTES: u64 = 0;
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct Slice {
+    ptr: *const u8,
+    size: usize,
+}
+
 #[no_mangle]
-pub extern "C" fn call() {
+pub extern "C" fn call(argc: u64, slices: *const Slice) {
+    host::print(&format!("argc={argc}"));
+    for i in 0..argc {
+        let slice = unsafe { slices.offset(i as _).read() };
+        let real_slice = unsafe { slice::from_raw_parts(slice.ptr, slice.size) };
+        let s = core::str::from_utf8(real_slice).unwrap();
+        host::print(&format!("slice[{i}]={s:?} ({slice:?})"));
+    }
+
     let non_existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
     host::print(&format!("non_existing_entry={:?}", non_existing_entry));
 
     host::write(KEY_SPACE_DEFAULT, b"hello", TAG_BYTES, b"world").unwrap();
     let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
     host::print(&format!("existing_entry={:?}", existing_entry));
-    // assert_eq!(e);
+
+    // host::revert(1234);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

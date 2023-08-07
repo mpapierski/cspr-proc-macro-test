@@ -1,11 +1,11 @@
 extern crate proc_macro;
 use std::str::FromStr;
 
-use api::{EntryPoint, get_named_arg};
+use api::{get_named_arg, EntryPoint};
+use paste::paste;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Item, ItemFn};
-use paste::paste;
 
 #[proc_macro_attribute]
 pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
@@ -36,7 +36,8 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
     // println!("{}", &tokens.get(0).unwrap());
     quote! {
         #(#tokens)*;
-    }.into()
+    }
+    .into()
 }
 
 #[proc_macro_attribute]
@@ -73,8 +74,7 @@ pub fn entry_point(attr: TokenStream, item: TokenStream) -> TokenStream {
         };
         handle_args.push(tok);
 
-
-        let tok2 = quote!{
+        let tok2 = quote! {
             (stringify!(#name), <#ty>::cl_type())
         };
         params.push(tok2);
@@ -82,12 +82,9 @@ pub fn entry_point(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // let len = params.len();
 
-
-
     let output = &func.sig.output;
 
     // let const_tok =
-
 
     let gen = quote! {
         // const paste!(#func_name, _ENTRY_POINT): &str = #func_name;
