@@ -3,41 +3,137 @@ use std::str::FromStr;
 
 use api::{get_named_arg, EntryPoint};
 use paste::paste;
-use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Item, ItemFn};
+use proc_macro::{Ident, TokenStream, TokenTree};
+use quote::{format_ident, quote};
+use syn::{
+    parse_macro_input,
+    token::{Crate, Pub},
+    Data, DeriveInput, Item, ItemFn, VisRestricted, Visibility,
+};
 
 #[proc_macro_attribute]
 pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
-    // eprintln!("{attr:#?}");
-    let mut tokens = Vec::new();
     let func = parse_macro_input!(item as ItemFn);
+    let func_name = &func.sig.ident;
+    // eprintln!("{attrs:?}");
 
-    for attr in attrs {
-        if attr.to_string() == "call" {
-            let func_name = &func.sig.ident;
-            let body = &func.block;
-            // let func = func;
+    let mut attrs_iter = attrs.into_iter().peekable();
 
-            // let mangled = format!("mod mangled_{func_name} {{ {func} }}");
-            // let mangled = TokenStream::from_str(&mangled).unwrap();
+    for attr in &mut attrs_iter {
+        match attr {
+            proc_macro::TokenTree::Ident(ident) if ident.to_string() == "export" => {
+                // // let puct = attrs.peek()
+                // let export_name = if let Some(TokenTree::Punct(punct)) = attrs_iter.peek().cloned() {
+                //     if punct.as_char() == '=' {
+                //         attrs_iter.next();
+                //         if let Some(TokenTree::Literal(literal)) = attrs_iter.peek() {
+                //             let lit = attrs_iter.next().expect("should have literal");
+                //             // let name = attrs_iter.next().expect("rename to");
 
-            let token = quote! {
-                #[no_mangle]
-                pub extern "C" fn call() {
-                    #func;
-                    #func_name()
-                    // wasm_export_ #func_name::#func_name();
+                //             // break Some(lit);
+                //             // quote! { #lit }.into()
+                //             lit
+                //             // lit.into()
+                //         }
+                //         else {
+                //             todo!("not a literal")
+                //         }
+                //     }
+                //     else {
+                //         todo!()
+                //     }
+                // }
+                // else {
+                //     // TokenTree::from(func_name.clone())
+                //     // func_name.clone()
+                //     // quote! { func_name }
+                //     // func_name.clone()
+                //     quote! { func_name }
+                // };
+
+                let mut arg_slices = Vec::new();
+                let mut arg_casts = Vec::new();
+                let mut arg_calls = Vec::new();
+
+                for input in &func.sig.inputs {
+                    dbg!(&input);
+
+                    let typed = match input {
+                        syn::FnArg::Receiver(_) => todo!(),
+                        syn::FnArg::Typed(typed) => typed,
+                    };
+                    let name = match typed.pat.as_ref() {
+                        syn::Pat::Ident(ident) => &ident.ident,
+                        _ => todo!(),
+                    };
+
+                    // let name = input.n
+                    let arg = quote! {
+                        unsafe { core::ptr::NonNull::new_unchecked(#name).as_ref() }.as_slice()
+                    };
+
+                    arg_casts.push(arg);
+                    let arg_slice = quote! {
+                        #name: *mut crate::host::Slice
+                    };
+                    arg_slices.push(arg_slice);
+
+                    arg_calls.push(quote! {
+                        name
+                    })
                 }
-            };
-            tokens.push(token);
+
+                // Ident::
+                let mod_name = format_ident!("__casper__export_{func_name}");
+
+                let token = quote! {
+                    pub(crate) mod #mod_name {
+                        use super::*;
+                        #func
+                    }
+
+                    #[cfg(target_arch = "wasm32")]
+                    #[no_mangle]
+                    pub extern "C" fn #func_name( #(#arg_slices,)* ) {
+                        #mod_name::#func_name(#(#arg_casts,)*);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    pub use #mod_name::#func_name;
+                    // call(#())
+
+                };
+                // println!("{token:#}");
+                return token.into();
+            }
+            _ => todo!(),
         }
     }
-    // println!("{}", &tokens.get(0).unwrap());
-    quote! {
-        #(#tokens)*;
-    }
-    .into()
+    todo!()
+    // dbg!(&attrs);
+    // // eprintln!("{attr:#?}");
+    // let mut tokens = Vec::new();
+
+    // for attr in attrs {
+    //     if attr.to_string() == "call" {
+    //         let func_name = &func.sig.ident;
+    //         let body = &func.block;
+
+    //         let token = quote! {
+    //             #[no_mangle]
+    //             pub extern "C" fn call() {
+    //                 #func;
+    //                 #func_name()
+    //                 // wasm_export_ #func_name::#func_name();
+    //             }
+    //         };
+    //         tokens.push(token);
+    //     }
+    // }
+    // // println!("{}", &tokens.get(0).unwrap());
+    // quote! {
+    //     #(#tokens)*;
+    // }
+    // .into()
 }
 
 #[proc_macro_attribute]

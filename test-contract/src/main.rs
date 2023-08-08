@@ -12,7 +12,9 @@ use core::{
 };
 
 use alloc::slice;
-use api::{dispatch, host, EntryPoint};
+use api::host;
+// use api::{dispatch, host::{self}, EntryPoint};
+// use api:
 use macros::casper;
 
 // pub(crate) mod foo {
@@ -54,34 +56,48 @@ use macros::casper;
 const KEY_SPACE_DEFAULT: u64 = 0;
 const TAG_BYTES: u64 = 0;
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct Slice {
-    ptr: *const u8,
-    size: usize,
-}
+// #[casper(export)]
+// // #[no_mangle]
+// fn call(argc: u64, slices: *const Slice) {
+//     host::print(&format!("argc={argc}"));
+//     for i in 0..argc {
+//         let slice = unsafe { slices.offset(i as _).read() };
+//         let real_slice = unsafe { slice::from_raw_parts(slice.ptr, slice.size) };
+//         let s = core::str::from_utf8(real_slice).unwrap();
+//         host::print(&format!("slice[{i}]={s:?} ({slice:?})"));
+//     }
 
-#[no_mangle]
-pub extern "C" fn call(argc: u64, slices: *const Slice) {
-    host::print(&format!("argc={argc}"));
-    for i in 0..argc {
-        let slice = unsafe { slices.offset(i as _).read() };
-        let real_slice = unsafe { slice::from_raw_parts(slice.ptr, slice.size) };
-        let s = core::str::from_utf8(real_slice).unwrap();
-        host::print(&format!("slice[{i}]={s:?} ({slice:?})"));
+//     // host::revert(1234);
+// }
+
+mod exports {
+    use api::host;
+    use macros::casper;
+
+    use crate::{KEY_SPACE_DEFAULT, TAG_BYTES};
+
+    #[casper(export)]
+    pub fn call(arg1: &[u8], arg2: &[u8], arg3: &[u8]) {
+        host::print(&format!(
+            "arg1={:?} arg2={:?} arg3={:?}",
+            core::str::from_utf8(arg1),
+            core::str::from_utf8(arg2),
+            core::str::from_utf8(arg3)
+        ));
+
+        let non_existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
+        host::print(&format!("non_existing_entry={:?}", non_existing_entry));
+        host::write(KEY_SPACE_DEFAULT, b"hello", TAG_BYTES, b"world").unwrap();
+        let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
+        host::print(&format!("existing_entry={:?}", existing_entry));
     }
-
-    let non_existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
-    host::print(&format!("non_existing_entry={:?}", non_existing_entry));
-
-    host::write(KEY_SPACE_DEFAULT, b"hello", TAG_BYTES, b"world").unwrap();
-    let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
-    host::print(&format!("existing_entry={:?}", existing_entry));
-
-    // host::revert(1234);
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn main() {
-    todo!("doesn't work");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test() {
+        exports::call(b"hello", b"world", b"asdf");
+    }
 }

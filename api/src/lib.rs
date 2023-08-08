@@ -77,12 +77,3 @@ pub fn get_named_arg<T: BorshDeserialize>(name: &str) -> Result<T, ApiError> {
     let deser: T = BorshDeserialize::deserialize(&mut slice).map_err(ApiError::Io)?;
     Ok(deser)
 }
-
-pub fn dispatch(fname: &str, args: BTreeMap<String, Vec<u8>>) {
-    let fptr = DISPATCHER.with(|dispatcher| dispatcher.borrow().get(fname).cloned());
-    let fptr = fptr.expect("should exists");
-    ARGS.with(|current_args| {
-        *current_args.borrow_mut() = args;
-    });
-    fptr();
-}
