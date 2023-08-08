@@ -32,13 +32,13 @@ pub struct Entry {
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
+    use bytes::Bytes;
     use core::slice;
     use std::{
         ffi::c_void,
         mem::{self, MaybeUninit},
         ptr::{self, NonNull},
     };
-    use bytes::Bytes;
 
     use super::{Entry, Error};
     #[repr(C)]
@@ -145,7 +145,11 @@ mod wasm {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use std::{borrow::Borrow, cell::RefCell, collections::BTreeMap};
+    use std::{
+        borrow::{Borrow, BorrowMut},
+        cell::RefCell,
+        collections::BTreeMap,
+    };
 
     use bytes::Bytes;
 
@@ -162,15 +166,30 @@ mod native {
         tag: u64,
         value: &'a [u8],
     }
+    type Container = BTreeMap<u64, BTreeMap<Bytes, TaggedValue>>;
 
-    #[derive(Default)]
-    struct LocalKV {
-        db: BTreeMap<u64, BTreeMap<Bytes, TaggedValue>>,
+    #[derive(Default, Clone)]
+    pub(crate) struct LocalKV {
+        db: Container,
     }
+
+    // impl LocalKV {
+    //     pub(crate) fn update(&mut self, db: LocalKV) {
+    //         self.db = db.db
+    //     }
+    // }
 
     thread_local! {
         static DB: RefCell<LocalKV> = RefCell::new(LocalKV::default());
     }
+
+    // pub(crate) fn clone_db() -> LocalKV {
+    //     DB.with(|kv| kv.borrow().clone())
+    // }
+
+    // pub(crate) fn commit_db(db: LocalKV) {
+    //     DB.with(|kv| {*kv.borrow_mut() = db;})
+    // }
 
     pub fn print(msg: &str) {
         println!("💻 {msg}");
@@ -199,13 +218,16 @@ mod native {
         }
     }
 
-    pub fn dispatch<Args, R>(export: impl Fn(Args) -> R, args: Args) -> R {
-        export(args)
+    // pub fn dispatch<Args, R>(export: impl Fn(Args) -> R, args: Args) -> R {
+    //     export(args)
+    // }
+    pub fn revert(code: u32) -> ! {
+        panic!("revert with code {code}")
     }
 }
 
 use bytes::Bytes;
 #[cfg(not(target_arch = "wasm32"))]
-pub use native::{dispatch, print, read, write};
+pub use native::{print, read, revert, write};
 #[cfg(target_arch = "wasm32")]
 pub use wasm::{print, read, revert, write, Slice};

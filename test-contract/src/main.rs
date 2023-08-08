@@ -90,6 +90,7 @@ mod exports {
         host::write(KEY_SPACE_DEFAULT, b"hello", TAG_BYTES, b"world").unwrap();
         let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
         host::print(&format!("existing_entry={:?}", existing_entry));
+        host::revert(123);
     }
 }
 
