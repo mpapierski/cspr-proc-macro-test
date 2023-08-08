@@ -38,6 +38,7 @@ mod wasm {
         mem::{self, MaybeUninit},
         ptr::{self, NonNull},
     };
+    use bytes::Bytes;
 
     use super::{Entry, Error};
     #[repr(C)]
@@ -100,7 +101,7 @@ mod wasm {
             let info = unsafe { info.assume_init() };
             let data = unsafe { Vec::from_raw_parts(info.data, info.size as _, info.size as _) };
             Ok(Some(Entry {
-                data,
+                data: Bytes::from(data),
                 tag: info.tag,
             }))
         } else if ret == 1 {

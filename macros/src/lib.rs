@@ -99,8 +99,6 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     pub use #mod_name::#func_name;
-                    // call(#())
-
                 };
                 // println!("{token:#}");
                 return token.into();
