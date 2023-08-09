@@ -22,42 +22,11 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
     for attr in &mut attrs_iter {
         match attr {
             proc_macro::TokenTree::Ident(ident) if ident.to_string() == "export" => {
-                // // let puct = attrs.peek()
-                // let export_name = if let Some(TokenTree::Punct(punct)) = attrs_iter.peek().cloned() {
-                //     if punct.as_char() == '=' {
-                //         attrs_iter.next();
-                //         if let Some(TokenTree::Literal(literal)) = attrs_iter.peek() {
-                //             let lit = attrs_iter.next().expect("should have literal");
-                //             // let name = attrs_iter.next().expect("rename to");
-
-                //             // break Some(lit);
-                //             // quote! { #lit }.into()
-                //             lit
-                //             // lit.into()
-                //         }
-                //         else {
-                //             todo!("not a literal")
-                //         }
-                //     }
-                //     else {
-                //         todo!()
-                //     }
-                // }
-                // else {
-                //     // TokenTree::from(func_name.clone())
-                //     // func_name.clone()
-                //     // quote! { func_name }
-                //     // func_name.clone()
-                //     quote! { func_name }
-                // };
-
                 let mut arg_slices = Vec::new();
                 let mut arg_casts = Vec::new();
                 let mut arg_calls = Vec::new();
 
                 for input in &func.sig.inputs {
-                    dbg!(&input);
-
                     let typed = match input {
                         syn::FnArg::Receiver(_) => todo!(),
                         syn::FnArg::Typed(typed) => typed,
@@ -74,7 +43,7 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
                     arg_casts.push(arg);
                     let arg_slice = quote! {
-                        #name: *mut crate::host::Slice
+                        #name: *mut api::host::Slice
                     };
                     arg_slices.push(arg_slice);
 
@@ -89,6 +58,7 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
                 let token = quote! {
                     pub(crate) mod #mod_name {
                         use super::*;
+
                         #func
                     }
 
@@ -97,6 +67,7 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
                     pub extern "C" fn #func_name( #(#arg_slices,)* ) {
                         #mod_name::#func_name(#(#arg_casts,)*);
                     }
+
                     #[cfg(not(target_arch = "wasm32"))]
                     pub use #mod_name::#func_name;
                 };
@@ -136,10 +107,7 @@ pub fn casper(attrs: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn entry_point(attr: TokenStream, item: TokenStream) -> TokenStream {
-    eprintln!("{attr:#?}");
-    let item2 = item.clone();
-    let func = parse_macro_input!(item2 as ItemFn);
-    eprintln!("{:#?}", func);
+    let func = parse_macro_input!(item as ItemFn);
 
     let vis = &func.vis;
     let _sig = &func.sig;

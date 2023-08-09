@@ -1,3 +1,6 @@
+// #![feature(wasm_import_memory)]
+// #[linkage = "--import-memory"]
+
 pub mod host;
 
 use std::{cell::RefCell, collections::BTreeMap, fmt, io};

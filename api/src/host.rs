@@ -4,61 +4,60 @@ pub enum Error {
     Bar,
 }
 
-// pub trait Host {
-//     fn read(&mut self, key_space: u64, key: &[u8], size: *mut u64, tag: &mut u64) -> Result<Vec<u8>, Error>;
-//     fn write(&mut self, key_space: u64, key: &[u8], value_tag: u64, value: &[u8]) -> Result<(), Error>;
-// }
-
-#[cfg(not(target_arch = "wasm32"))]
-mod native_support {
-    use std::{
-        cell::RefCell,
-        collections::HashMap,
-        sync::{Arc, Mutex},
-    };
-
-    use once_cell::sync::Lazy;
-
-    // pub(crate) type ExportFn = dyn Fn(&[&[u8]]);
-
-    // static EXPORTS: Lazy<Arc<Mutex<HashMap<String, Box<dyn Fn(&[&[u8]])>>>>> = Lazy::new(Default::default);
-}
-
 #[derive(Debug)]
 pub struct Entry {
-    data: Bytes,
-    tag: u64,
+    pub tag: u64,
+    pub data: Vec<u8>,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Slice {
+    ptr: *const u8,
+    size: usize,
+}
+
+impl Slice {
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.ptr, self.size) }
+    }
+}
+pub struct Param {
+    pub name_ptr: *const u8,
+    pub name_len: usize,
+    pub ty: u32,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct EntryPoint {
+    pub name_ptr: *const u8,
+    pub name_len: usize,
+
+    pub params_ptr: *const Param, // pointer of pointers (preferred 'static lifetime)
+    pub params_size: usize,
+
+    pub fptr: *const c_void, // extern "C" fn(A1) -> (),
 }
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use bytes::Bytes;
-    use core::slice;
+
     use std::{
+        alloc::{self, Layout},
         ffi::c_void,
         mem::{self, MaybeUninit},
         ptr::{self, NonNull},
     };
 
     use super::{Entry, Error};
-    #[repr(C)]
-    #[derive(Debug)]
-    pub struct Slice {
-        ptr: *const u8,
-        size: usize,
-    }
 
-    impl Slice {
-        pub fn as_slice(&self) -> &[u8] {
-            unsafe { slice::from_raw_parts(self.ptr, self.size) }
-        }
-    }
     #[derive(Debug)]
     #[repr(C)]
     pub struct ReadInfo {
-        data: *mut u8,
+        data: *const u8,
         /// Size in bytes.
-        size: u64,
+        size: usize,
         /// Value tag.
         tag: u64,
     }
@@ -80,6 +79,8 @@ mod wasm {
         ) -> i32;
         pub fn casper_print(msg_ptr: *const u8, msg_size: usize) -> i32;
         pub fn casper_revert(code: u32);
+
+        // pub fn casper_add_contract_version(hash_ptr: *const u8, hash_len: usize, entry_points);
         // pub fn foo(slice: *const Slice);
     }
 
@@ -93,15 +94,27 @@ mod wasm {
     }
 
     pub fn read(key_space: u64, key: &[u8]) -> Result<Option<Entry>, Error> {
-        let mut info = MaybeUninit::uninit();
+        // let mut info = MaybeUninit::uninit();
+        let mut info = ReadInfo {
+            data: ptr::null(),
+            size: 0,
+            tag: 0,
+        };
 
-        let ret = unsafe { casper_read(key_space, key.as_ptr(), key.len(), info.as_mut_ptr()) };
+        let ret = unsafe {
+            casper_read(
+                key_space,
+                key.as_ptr(),
+                key.len(),
+                &mut info as *mut ReadInfo,
+            )
+        };
 
         if ret == 0 {
-            let info = unsafe { info.assume_init() };
-            let data = unsafe { Vec::from_raw_parts(info.data, info.size as _, info.size as _) };
+            let data =
+                unsafe { Vec::from_raw_parts(info.data as _, info.size as _, info.size as _) };
             Ok(Some(Entry {
-                data: Bytes::from(data),
+                data: data,
                 tag: info.tag,
             }))
         } else if ret == 1 {
@@ -183,14 +196,6 @@ mod native {
         static DB: RefCell<LocalKV> = RefCell::new(LocalKV::default());
     }
 
-    // pub(crate) fn clone_db() -> LocalKV {
-    //     DB.with(|kv| kv.borrow().clone())
-    // }
-
-    // pub(crate) fn commit_db(db: LocalKV) {
-    //     DB.with(|kv| {*kv.borrow_mut() = db;})
-    // }
-
     pub fn print(msg: &str) {
         println!("💻 {msg}");
     }
@@ -211,7 +216,7 @@ mod native {
         let value = DB.with(|db| db.borrow().db.get(&key_space)?.get(key).cloned());
         match value {
             Some(tagged_value) => Ok(Some(Entry {
-                data: tagged_value.value.clone(),
+                data: tagged_value.value.into(),
                 tag: tagged_value.tag,
             })),
             None => Ok(None),
@@ -226,8 +231,22 @@ mod native {
     }
 }
 
+use core::slice;
+use std::ffi::c_void;
+
 use bytes::Bytes;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{print, read, revert, write};
 #[cfg(target_arch = "wasm32")]
-pub use wasm::{print, read, revert, write, Slice};
+pub use wasm::{print, read, revert, write};
+
+// #[cfg(test)]
+// mod tests {
+//     use std::mem;
+
+//     use super::*;
+//     fn test_fptr(param_1: *const Slice, param_2: *const Slice) {
+
+//     }
+
+//     }
