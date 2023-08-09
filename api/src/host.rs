@@ -7,8 +7,8 @@ pub enum Error {
 #[derive(Debug)]
 pub struct Entry {
     pub tag: u64,
-    pub data: Vec<u8>,
 }
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct Slice {
@@ -68,6 +68,8 @@ mod wasm {
             key_ptr: *const u8,
             key_size: usize,
             info: *mut ReadInfo,
+            alloc: extern "C" fn(usize, *mut c_void) -> *const u8,
+            alloc_ctx: *const c_void,
         ) -> i32;
         pub fn casper_write(
             key_space: u64,
@@ -93,7 +95,23 @@ mod wasm {
         unreachable!()
     }
 
-    pub fn read(key_space: u64, key: &[u8]) -> Result<Option<Entry>, Error> {
+    pub fn read_into<'a>(key_space: u64, key: &[u8], destination: &'a mut [u8]) -> Option<&'a [u8]> {
+        let mut what_size: Option<usize> = None;
+        read(key_space, key, |size| {
+            what_size = Some(size);
+            NonNull::new(destination.as_mut_ptr()).unwrap()
+        });
+
+        let size = what_size?;
+
+        Some(&destination[..size])
+    }
+
+    pub fn read<F: FnOnce(usize) -> NonNull<u8>>(
+        key_space: u64,
+        key: &[u8],
+        f: F,
+    ) -> Result<Option<Entry>, Error> {
         // let mut info = MaybeUninit::uninit();
         let mut info = ReadInfo {
             data: ptr::null(),
@@ -101,22 +119,30 @@ mod wasm {
             tag: 0,
         };
 
+        extern "C" fn alloc_cb<F: FnOnce(usize) -> NonNull<u8>>(
+            len: usize,
+            ctx: *mut c_void,
+        ) -> *const u8 {
+            let opt_closure = ctx as *mut Option<F>;
+            let mut ptr = unsafe { (*opt_closure).take().unwrap()(len) };
+            unsafe { ptr.as_mut() }
+        }
+
+        let ctx = &Some(f) as *const _ as *mut c_void;
+
         let ret = unsafe {
             casper_read(
                 key_space,
                 key.as_ptr(),
                 key.len(),
                 &mut info as *mut ReadInfo,
+                alloc_cb::<F>,
+                ctx,
             )
         };
 
         if ret == 0 {
-            let data =
-                unsafe { Vec::from_raw_parts(info.data as _, info.size as _, info.size as _) };
-            Ok(Some(Entry {
-                data: data,
-                tag: info.tag,
-            }))
+            Ok(Some(Entry { tag: info.tag }))
         } else if ret == 1 {
             Ok(None)
         } else {
@@ -149,6 +175,7 @@ mod wasm {
         // Return the pointer so the runtime can write data at this offset
         ptr
     }
+
     #[no_mangle]
     pub extern "C" fn dealloc(ptr: *const c_void, len: usize) {
         let ptr: Vec<u8> = unsafe { Vec::from_raw_parts(ptr as _, len, len) };
@@ -212,11 +239,14 @@ mod native {
         });
         Ok(())
     }
-    pub fn read(key_space: u64, key: &[u8]) -> Result<Option<Entry>, Error> {
+    pub fn read(
+        key_space: u64,
+        key: &[u8],
+        func: impl FnOnce(usize) -> core::ptr::NonNull<u8>,
+    ) -> Result<Option<Entry>, Error> {
         let value = DB.with(|db| db.borrow().db.get(&key_space)?.get(key).cloned());
         match value {
             Some(tagged_value) => Ok(Some(Entry {
-                data: tagged_value.value.into(),
                 tag: tagged_value.tag,
             })),
             None => Ok(None),

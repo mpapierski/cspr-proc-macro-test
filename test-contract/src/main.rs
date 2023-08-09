@@ -3,11 +3,27 @@
 
 #[macro_use]
 extern crate alloc;
+use core::ptr::NonNull;
+
+use alloc::vec::Vec;
+
+#[inline(never)]
+fn reserve_vec_space(vec: &mut Vec<u8>, size: usize) -> NonNull<u8> {
+    *vec = Vec::with_capacity(size);
+    unsafe {
+        vec.set_len(size);
+    }
+    NonNull::new(vec.as_mut_ptr()).expect("non null ptr")
+}
 
 mod exports {
+
     use alloc::string::String;
+    use alloc::vec::Vec;
     use api::host::{self, EntryPoint, Param, Slice};
     use macros::casper;
+
+    use crate::reserve_vec_space;
 
     const KEY_SPACE_DEFAULT: u64 = 0;
     const TAG_BYTES: u64 = 0;
@@ -25,14 +41,26 @@ mod exports {
             core::str::from_utf8(arg3)
         ));
 
-        let _non_existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello").expect("should read");
+        let mut read1 = Vec::new();
+
+        let _non_existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello", |size| {
+            host::print(&format!("first cb alloc cb with size={size}"));
+            reserve_vec_space(&mut read1, size)
+            // static_buffer.as_mut_ptr()
+        })
+        .expect("should read");
         // host::print(&format!("non_existing_entry={:?}", non_existing_entry));
         host::write(KEY_SPACE_DEFAULT, b"hello", TAG_BYTES, b"Hello, world!").unwrap();
-        let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello")
-            .expect("should read")
-            .expect("should have entry");
+
+        let mut read2 = Vec::new();
+        let existing_entry = host::read(KEY_SPACE_DEFAULT, b"hello", |size| {
+            host::print(&format!("second cb alloc cb with size={size}"));
+            reserve_vec_space(&mut read2, size)
+        })
+        .expect("should read")
+        .expect("should have entry");
         host::print(&format!("existing_entry={:?}", existing_entry));
-        let msg = String::from_utf8(existing_entry.data).unwrap();
+        let msg = String::from_utf8(read2).unwrap();
         host::print(&format!("existing_entry={:?}", msg));
 
         host::write(KEY_SPACE_DEFAULT, b"read back", TAG_BYTES, msg.as_bytes()).unwrap();
