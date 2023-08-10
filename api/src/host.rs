@@ -95,7 +95,11 @@ mod wasm {
         unreachable!()
     }
 
-    pub fn read_into<'a>(key_space: u64, key: &[u8], destination: &'a mut [u8]) -> Option<&'a [u8]> {
+    pub fn read_into<'a>(
+        key_space: u64,
+        key: &[u8],
+        destination: &'a mut [u8],
+    ) -> Option<&'a [u8]> {
         let mut what_size: Option<usize> = None;
         read(key_space, key, |size| {
             what_size = Some(size);

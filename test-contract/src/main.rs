@@ -6,24 +6,43 @@ extern crate alloc;
 use core::ptr::NonNull;
 
 use alloc::vec::Vec;
+use alloc::string::String;
+use api::Value;
+use macros::{casper, Contract};
 
-#[inline(never)]
-fn reserve_vec_space(vec: &mut Vec<u8>, size: usize) -> NonNull<u8> {
-    *vec = Vec::with_capacity(size);
-    unsafe {
-        vec.set_len(size);
-    }
-    NonNull::new(vec.as_mut_ptr()).expect("non null ptr")
+#[derive(Contract, Debug)]
+struct Flipper {
+    flag: Value<bool>,
 }
+
+// #[casper(contract)]
+// #[casper(entry_point)]
+#[casper(entry_points)]
+impl Flipper {
+    pub fn flip(&mut self, argument1: bool, argument2: String) {
+        let mut value = self.flag.get().unwrap().unwrap_or_default();
+        value = !value;
+        self.flag.set(value).unwrap();
+    }
+
+    pub fn flag_value(&self) -> bool {
+        self.flag.get().unwrap().unwrap_or_default()
+    }
+}
+
+// extern "C" fn flip(arg1: *const Slice, arg2: *const Slice);
 
 mod exports {
 
     use alloc::string::String;
     use alloc::vec::Vec;
-    use api::host::{self, EntryPoint, Param, Slice};
+    use api::{
+        host::{self, EntryPoint, Param, Slice},
+        reserve_vec_space,
+    };
     use macros::casper;
 
-    use crate::reserve_vec_space;
+    // use crate::reserve_vec_space;
 
     const KEY_SPACE_DEFAULT: u64 = 0;
     const TAG_BYTES: u64 = 0;
@@ -107,9 +126,30 @@ fn main() {
 }
 #[cfg(test)]
 mod tests {
+
+    use api::Contract;
+
     use super::*;
     #[test]
     fn test() {
         exports::call(b"hello", b"world", b"asdf");
+    }
+
+    #[test]
+    fn compile_time_schema() {
+        let schema = Flipper::schema();
+        // dbg!(&schema);
+        assert_eq!(schema.name, "Flipper");
+        assert_eq!(schema.entry_points[0].name, "flip");
+
+        let s = serde_json::to_string_pretty(&schema).expect("foo");
+        println!("{s}");
+
+        let mut flipper = Flipper::new();
+        assert_eq!(Flipper::name(), "Flipper");
+        // dbg!(&flipper);
+        // flipper.flip(false, "Hello, world!".to_string());
+        // let value = flipper.flag_value();
+        // assert_eq!(value, true);
     }
 }

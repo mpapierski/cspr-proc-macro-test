@@ -3,14 +3,17 @@
 
 pub mod host;
 
-use std::{cell::RefCell, collections::BTreeMap, fmt, io};
+use std::{cell::RefCell, collections::BTreeMap, fmt, io, marker::PhantomData, ptr::NonNull};
 
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
 pub enum CLType {
+    Bool,
     String,
     Unit,
+    Any,
 }
 
 pub trait CLTyped {
@@ -22,11 +25,113 @@ impl CLTyped for String {
         CLType::String
     }
 }
+impl CLTyped for bool {
+    fn cl_type() -> CLType {
+        CLType::Bool
+    }
+}
 
 impl CLTyped for () {
     fn cl_type() -> CLType {
         CLType::Unit
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+use serde::{Serialize, Deserialize};
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+pub struct SchemaArgument {
+    pub name: &'static str,
+    pub ty: CLType,
+}
+
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+
+pub struct SchemaEntryPoint {
+    pub name: &'static str,
+    pub arguments: Vec<SchemaArgument>,
+}
+
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+pub struct SchemaData {
+    pub name: &'static str,
+    pub ty: CLType,
+}
+
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(Serialize, Deserialize))]
+pub struct Schema {
+    pub name: &'static str,
+    pub data: Vec<SchemaData>,
+    pub entry_points: Vec<SchemaEntryPoint>,
+}
+
+#[derive(Debug)]
+pub struct Value<T> {
+//  type Type = T;
+
+    name: &'static str,
+    key_space: u64,
+    _marker: PhantomData<T>,
+}
+impl<T: CLTyped> CLTyped for Value<T> {
+    fn cl_type() -> CLType {
+        T::cl_type()
+    }
+}
+pub fn reserve_vec_space(vec: &mut Vec<u8>, size: usize) -> NonNull<u8> {
+    *vec = Vec::with_capacity(size);
+    unsafe {
+        vec.set_len(size);
+    }
+    NonNull::new(vec.as_mut_ptr()).expect("non null ptr")
+}
+
+impl<T> Value<T> {
+    pub fn new(name: &'static str, key_space: u64) -> Self {
+        Self {
+            name,
+            key_space,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: BorshSerialize> Value<T> {
+    pub fn set(&mut self, value: T) -> io::Result<()> {
+        // let mut value = Vec::new();
+        // value.serialize(&mut value)?;
+        let v = borsh::to_vec(&value)?;
+        host::write(self.key_space, self.name.as_bytes(), 0, &v)
+            .map_err(|error| io::Error::new(io::ErrorKind::Other, "todo"))?;
+        Ok(())
+    }
+}
+impl<T: BorshDeserialize> Value<T> {
+    pub fn get(&self) -> io::Result<Option<T>> {
+        let mut read = None;//Vec::new();
+        host::read(self.key_space, self.name.as_bytes(), |size| {
+            *(&mut read) = Some(Vec::new());
+            reserve_vec_space(read.as_mut().unwrap(), size)
+        })
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, "todo"))?;
+        match read {
+            Some(mut read) => {
+                let value = T::deserialize(&mut read.as_slice())?;
+                Ok(Some(value))
+            },
+            None => Ok(None),
+        }
+    }
+}
+
+pub trait Contract {
+    fn new() -> Self;
+    fn name() -> &'static str;
+    fn schema() -> Schema;
 }
 
 #[derive(Debug)]
